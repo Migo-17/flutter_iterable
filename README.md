@@ -150,6 +150,28 @@ On iOS, `registerDeviceToken` expects the APNs device token (the hex string from
 `getAPNSToken()`); the plugin converts it to the `Data` the native SDK requires.
 On Android it expects the FCM registration token.
 
+### Push tap actions (open URL / custom action)
+
+When a user taps a push notification, the plugin forwards the action to your
+`urlHandler` and `customActionHandler` callbacks in `IterableConfig`:
+
+- **iOS**: notification taps are forwarded through `IterableAppIntegration`. This
+  requires the app's `UNUserNotificationCenter` delegate to be the
+  `FlutterAppDelegate` (the default if no other plugin claims it, e.g.
+  `firebase_messaging`); otherwise set it yourself in `AppDelegate`.
+- **Android**: pending push actions are processed when the SDK initializes and when
+  the Flutter activity receives the Iterable intent (`onNewIntent` is handled by the plugin).
+
+These handlers run on the platform's main thread, where the plugin cannot block
+waiting for an async Dart answer. So if you register a `urlHandler` /
+`customActionHandler`, the action is forwarded to Dart and the native SDK is told
+the **app handled it** — it will not open the URL in a browser. Perform any
+navigation inside your Dart handler. If you do not register a handler, the native
+SDK handles the URL itself (opens it). The handler's return value is reserved for
+future use and is currently not round-tripped to the native SDK.
+
+`IterableAPI.onPushOpened` also emits the push payload when an action is processed.
+
 ## Architecture
 
 The plugin uses a single bidirectional `MethodChannel` (`iterable_sdk/method`):

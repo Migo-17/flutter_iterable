@@ -9,6 +9,9 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
 
     private var channel: FlutterMethodChannel
     private var autoDisplayPaused = false
+    private var sdkInitialized = false
+    private var hasUrlHandler = false
+    private var hasCustomActionHandler = false
 
     init(channel: FlutterMethodChannel) {
         self.channel = channel
@@ -236,14 +239,17 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     private func initialize(args: [String: Any], result: @escaping FlutterResult) {
         let apiKey = args["apiKey"] as? String ?? ""
         let configMap = args["config"] as? [String: Any] ?? [:]
+        hasUrlHandler = configMap["hasUrlHandler"] as? Bool ?? false
+        hasCustomActionHandler = configMap["hasCustomActionHandler"] as? Bool ?? false
         let config = buildConfig(configMap)
-        let version = args["version"] as? String
 
         DispatchQueue.main.async {
             IterableAPI.initialize(apiKey: apiKey, launchOptions: nil, config: config)
+            self.sdkInitialized = true
             if configMap["enableEmbeddedMessaging"] as? Bool == true {
                 IterableAPI.embeddedManager.addUpdateListener(self)
             }
+            self.emitPushOpenedIfAvailable()
             result(true)
         }
     }
@@ -347,6 +353,16 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
                                           didReceiveRemoteNotification: userInfo,
                                           fetchCompletionHandler: completionHandler)
         return true
+    }
+
+    /// Forwards notification taps to Iterable so openUrl / customAction handlers run.
+    public func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                       didReceive response: UNNotificationResponse,
+                                       withCompletionHandler completionHandler: @escaping () -> Void) {
+        IterableAppIntegration.userNotificationCenter(center,
+                                                      didReceive: response,
+                                                      withCompletionHandler: completionHandler)
+        emitPushOpenedIfAvailable()
     }
 
     // MARK: - Lookups
@@ -480,20 +496,38 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
             self.channel.invokeMethod(method, arguments: arguments)
         }
     }
+
+    private func emitPushOpenedIfAvailable() {
+        guard let payload = IterableAPI.lastPushPayload as? [String: Any] else { return }
+        invokeFlutter("handlePushOpened", payload)
+    }
 }
 
 // MARK: - Iterable delegates
 
 extension IterableSdkPlugin: IterableURLDelegate {
     public func handle(iterableURL url: URL, inContext context: IterableActionContext) -> Bool {
+        guard hasUrlHandler else { return false }
+        // Iterable invokes this on the main thread, where we cannot block waiting
+        // for a Dart answer (the method-channel reply is delivered on this same
+        // thread). Forward the event asynchronously and tell the SDK the app will
+        // handle the URL so it does not open it itself.
         invokeFlutter("urlHandler", ["url": url.absoluteString, "context": actionContextMap(context)])
+        if context.source == .push {
+            emitPushOpenedIfAvailable()
+        }
         return true
     }
 }
 
 extension IterableSdkPlugin: IterableCustomActionDelegate {
     public func handle(iterableCustomAction action: IterableAction, inContext context: IterableActionContext) -> Bool {
+        guard hasCustomActionHandler else { return false }
+        // Invoked on the main thread; forward asynchronously (see urlHandler).
         invokeFlutter("customActionHandler", ["action": actionMap(action), "context": actionContextMap(context)])
+        if context.source == .push {
+            emitPushOpenedIfAvailable()
+        }
         return true
     }
 }

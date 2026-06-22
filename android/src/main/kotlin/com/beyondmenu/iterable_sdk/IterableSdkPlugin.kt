@@ -2,6 +2,7 @@ package com.beyondmenu.iterable_sdk
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -29,6 +30,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.PluginRegistry
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -38,7 +40,8 @@ import java.util.concurrent.atomic.AtomicReference
 class IterableSdkPlugin :
     FlutterPlugin,
     ActivityAware,
-    MethodCallHandler {
+    MethodCallHandler,
+    PluginRegistry.NewIntentListener {
 
     private lateinit var channel: MethodChannel
     private lateinit var applicationContext: Context
@@ -47,6 +50,15 @@ class IterableSdkPlugin :
 
     @Volatile
     private var autoDisplayPaused = false
+
+    @Volatile
+    private var sdkInitialized = false
+
+    @Volatile
+    private var hasUrlHandler = false
+
+    @Volatile
+    private var hasCustomActionHandler = false
 
     companion object {
         private const val TAG = "IterableFlutter"
@@ -66,6 +78,8 @@ class IterableSdkPlugin :
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        binding.addOnNewIntentListener(this)
+        handleActivityIntent(binding.activity.intent)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -74,10 +88,32 @@ class IterableSdkPlugin :
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
+        binding.addOnNewIntentListener(this)
+        handleActivityIntent(binding.activity.intent)
     }
 
     override fun onDetachedFromActivity() {
         activity = null
+    }
+
+    override fun onNewIntent(intent: Intent): Boolean {
+        activity?.let { act ->
+            act.intent = intent
+            handleActivityIntent(intent)
+        }
+        return false
+    }
+
+    private fun handleActivityIntent(intent: Intent?) {
+        if (!sdkInitialized || intent == null) return
+        val context = activity ?: applicationContext
+        IterablePushBridge.handleIntent(context, intent)
+        emitPushOpenedIfAvailable()
+    }
+
+    private fun emitPushOpenedIfAvailable() {
+        val payload = bundleToMap(IterableApi.getInstance().payloadData) ?: return
+        invokeOnMain("handlePushOpened", payload)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -309,8 +345,11 @@ class IterableSdkPlugin :
     private fun initialize(call: MethodCall, result: Result) {
         val apiKey = call.argument<String>("apiKey")!!
         val configMap = call.argument<Map<String, Any?>>("config") ?: emptyMap()
+        hasUrlHandler = configMap["hasUrlHandler"] as? Boolean == true
+        hasCustomActionHandler = configMap["hasCustomActionHandler"] as? Boolean == true
         val config = buildConfig(configMap)
         IterableApi.initialize(applicationContext, apiKey, config)
+        sdkInitialized = true
 
         if (configMap["enableEmbeddedMessaging"] as? Boolean == true) {
             IterableApi.getInstance().embeddedManager.addUpdateListener(
@@ -323,6 +362,12 @@ class IterableSdkPlugin :
                 }
             )
         }
+
+        // Process any push action that arrived before the SDK was initialized.
+        IterablePushBridge.processPendingPushAction(applicationContext)
+        handleActivityIntent(activity?.intent)
+        emitPushOpenedIfAvailable()
+
         result.success(true)
     }
 
@@ -408,6 +453,11 @@ class IterableSdkPlugin :
     // ----- Handlers (native -> Flutter) -----
 
     private val urlHandler = IterableUrlHandler { uri, context ->
+        if (!hasUrlHandler) return@IterableUrlHandler false
+        // Iterable invokes this on the main thread, where we cannot block waiting
+        // for a Dart answer (the method-channel reply is delivered on this same
+        // thread). Forward the event asynchronously and tell the SDK the app will
+        // handle the URL so it does not open the browser itself.
         invokeOnMain(
             "urlHandler",
             mapOf(
@@ -415,11 +465,15 @@ class IterableSdkPlugin :
                 "context" to actionContextToMap(context)
             )
         )
-        // App registered a handler; let it manage navigation.
+        if (context?.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
+            emitPushOpenedIfAvailable()
+        }
         true
     }
 
     private val customActionHandler = IterableCustomActionHandler { action, context ->
+        if (!hasCustomActionHandler) return@IterableCustomActionHandler false
+        // Invoked on the main thread; forward asynchronously (see urlHandler).
         invokeOnMain(
             "customActionHandler",
             mapOf(
@@ -427,6 +481,9 @@ class IterableSdkPlugin :
                 "context" to actionContextToMap(context)
             )
         )
+        if (context?.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
+            emitPushOpenedIfAvailable()
+        }
         true
     }
 
