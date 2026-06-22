@@ -209,8 +209,24 @@ class IterableAPI {
   // --------------------------------------------------------------------------
 
   /// Registers the current device for push notifications.
+  ///
+  /// On iOS this requests notification authorization and registers with APNs;
+  /// the resulting token is forwarded to Iterable automatically. On Android the
+  /// native SDK fetches and registers the FCM token itself.
+  ///
+  /// If your app manages push tokens itself (for example through
+  /// `firebase_messaging`), call [registerDeviceToken] with the token instead
+  /// of, or in addition to, this method.
   static Future<void> registerForPush() {
     return _channel.invokeMethod('registerForPush');
+  }
+
+  /// Registers an externally obtained push token with Iterable.
+  ///
+  /// Pass the FCM registration token on Android and the APNs device token
+  /// (the hex string returned by `FirebaseMessaging.getAPNSToken()`) on iOS.
+  static Future<void> registerDeviceToken(String token) {
+    return _channel.invokeMethod('registerDeviceToken', {'token': token});
   }
 
   /// Disables push notifications for the current device.

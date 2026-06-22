@@ -111,6 +111,16 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
             registerForPush()
             result(nil)
 
+        case "registerDeviceToken":
+            if let token = args["token"] as? String, let data = Self.dataFromHexToken(token) {
+                IterableAPI.register(token: data)
+                result(nil)
+            } else {
+                result(FlutterError(code: "iterable_error",
+                                    message: "Device token is null or not a valid APNs hex token",
+                                    details: nil))
+            }
+
         case "disablePush":
             IterableAPI.disableDeviceForCurrentUser()
             result(nil)
@@ -301,6 +311,26 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     @objc(setDeviceToken:)
     public static func setDeviceToken(_ deviceToken: Data) {
         IterableAPI.register(token: deviceToken)
+    }
+
+    /// Converts an APNs device token expressed as a hex string (as returned by
+    /// `FirebaseMessaging.getAPNSToken()`) into the `Data` the Iterable SDK expects.
+    private static func dataFromHexToken(_ token: String) -> Data? {
+        let cleaned = token
+            .replacingOccurrences(of: "<", with: "")
+            .replacingOccurrences(of: ">", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        guard !cleaned.isEmpty, cleaned.count % 2 == 0 else { return nil }
+
+        var data = Data(capacity: cleaned.count / 2)
+        var index = cleaned.startIndex
+        while index < cleaned.endIndex {
+            let next = cleaned.index(index, offsetBy: 2)
+            guard let byte = UInt8(cleaned[index..<next], radix: 16) else { return nil }
+            data.append(byte)
+            index = next
+        }
+        return data
     }
 
     // MARK: - FlutterApplicationLifeCycleDelegate

@@ -178,6 +178,15 @@ class IterableSdkPlugin :
                     IterableApi.getInstance().registerForPush()
                     result.success(null)
                 }
+                "registerDeviceToken" -> {
+                    val token = call.argument<String>("token")
+                    if (token.isNullOrEmpty()) {
+                        result.error("iterable_error", "Device token is null or empty", null)
+                    } else {
+                        IterableApi.getInstance().registerDeviceToken(token)
+                        result.success(null)
+                    }
+                }
                 "disablePush" -> {
                     IterableApi.getInstance().disablePush()
                     result.success(null)

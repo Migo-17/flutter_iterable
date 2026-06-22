@@ -121,6 +121,35 @@ await IterableAPI.embeddedManager.syncMessages();
 IterableAPI.onEmbeddedMessagesUpdated.listen((msgs) => print(msgs.length));
 ```
 
+### Registering push tokens
+
+`registerForPush()` requests authorization and lets the native SDK obtain and
+register the token (APNs on iOS, FCM on Android). If your app already manages
+push tokens through `firebase_messaging`, hand the token to Iterable directly
+with `registerDeviceToken`:
+
+```dart
+Future<void> registerForPush() async {
+  try {
+    await IterableAPI.registerForPush();
+
+    final String? token = Platform.isIOS
+        ? await FirebaseMessaging.instance.getAPNSToken()
+        : await FirebaseMessaging.instance.getToken();
+
+    if (token != null && token.isNotEmpty) {
+      await IterableAPI.registerDeviceToken(token);
+    }
+  } catch (e) {
+    debugPrint('[Iterable] Register for push failed: $e');
+  }
+}
+```
+
+On iOS, `registerDeviceToken` expects the APNs device token (the hex string from
+`getAPNSToken()`); the plugin converts it to the `Data` the native SDK requires.
+On Android it expects the FCM registration token.
+
 ## Architecture
 
 The plugin uses a single bidirectional `MethodChannel` (`iterable_sdk/method`):
