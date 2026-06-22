@@ -1,0 +1,35 @@
+PODS:
+  - Flutter (1.0.0)
+  - integration_test (0.0.1):
+    - Flutter
+  - Iterable-iOS-SDK (6.6.7)
+  - iterable_sdk (0.0.1):
+    - Flutter
+    - Iterable-iOS-SDK (~> 6.6)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - iterable_sdk (from `.symlinks/plugins/iterable_sdk/ios`)
+
+SPEC REPOS:
+  trunk:
+    - Iterable-iOS-SDK
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  integration_test:
+    :path: ".symlinks/plugins/integration_test/ios"
+  iterable_sdk:
+    :path: ".symlinks/plugins/iterable_sdk/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+  Iterable-iOS-SDK: 75bc7b7b2ac75d48550265d877109369eca17de5
+  iterable_sdk: 9dedd6f705141172723f6aa6295aeaa3ccc90b16
+
+PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
+
+COCOAPODS: 1.16.2
