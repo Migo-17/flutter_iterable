@@ -13,7 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "FlutterFramework", path: "../FlutterFramework"),
-        .package(url: "https://github.com/Iterable/iterable-swift-sdk.git", from: "6.6.0")
+        .package(url: "https://github.com/Iterable/iterable-swift-sdk.git", from: "6.7.0")
     ],
     targets: [
         .target(

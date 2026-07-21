@@ -16,7 +16,7 @@ events, commerce, push, in-app, embedded messages, and JWT auth).
   s.source           = { :path => '.' }
   s.source_files = 'iterable_sdk/Sources/iterable_sdk/**/*'
   s.dependency 'Flutter'
-  s.dependency 'Iterable-iOS-SDK', '~> 6.6'
+  s.dependency 'Iterable-iOS-SDK', '~> 6.7'
   s.platform = :ios, '13.0'
 
   # Flutter.framework does not contain a i386 slice.
