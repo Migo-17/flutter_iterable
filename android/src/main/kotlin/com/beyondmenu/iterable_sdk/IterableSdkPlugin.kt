@@ -48,6 +48,12 @@ class IterableSdkPlugin :
     private var activity: Activity? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // Push payloads already acted on. Iterable's default "open app" action relaunches
+    // MainActivity with the same push extras, which re-enters onNewIntent -> a relaunch
+    // loop. Keyed on payload content (see pushIntentKey) so the key survives the
+    // extras-copy Iterable makes for the relaunch; each push is handled exactly once.
+    private val handledPushKeys = HashSet<String>()
+
     @Volatile
     private var autoDisplayPaused = false
 
@@ -106,9 +112,25 @@ class IterableSdkPlugin :
 
     private fun handleActivityIntent(intent: Intent?) {
         if (!sdkInitialized || intent == null) return
+        if (!IterableApi.getInstance().isIterableIntent(intent)) return
+        // Act on each push once. Blocks the "open app" relaunch loop and avoids
+        // re-handling the same intent on activity re-attach (e.g. rotation).
+        if (!handledPushKeys.add(pushIntentKey(intent))) return
         val context = activity ?: applicationContext
         IterablePushBridge.handleIntent(context, intent)
         emitPushOpenedIfAvailable()
+    }
+
+    /**
+     * Stable identity of a push tap. Prefers Iterable's payload string ("itbl"),
+     * which uniquely identifies the message and is copied verbatim into the relaunch
+     * intent's extras; falls back to a signature over all extras so the guard never
+     * silently no-ops when the payload isn't a plain string.
+     */
+    private fun pushIntentKey(intent: Intent): String {
+        val extras = intent.extras ?: return intent.dataString ?: intent.toString()
+        extras.getString("itbl")?.let { return it }
+        return extras.keySet().sorted().joinToString("|") { "$it=${extras.get(it)}" }
     }
 
     private fun emitPushOpenedIfAvailable() {
