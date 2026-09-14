@@ -10,7 +10,8 @@ deep-link / custom-action handling and JWT (token-based) authentication.
 
 | Area | Android SDK | iOS SDK |
 |------|-------------|---------|
-| Native dependency | `com.iterable:iterableapi:3.10.1` | `Iterable-iOS-SDK ~> 6.7.5` |
+| Native dependency | `com.iterable:iterableapi:3.10.1` | `iterable-swift-sdk` from `6.7.5` |
+| Dependency manager | Gradle | Swift Package Manager (no CocoaPods) |
 | Min platform | `minSdk 24` | iOS 13 |
 
 ## Features
@@ -39,13 +40,26 @@ Pin `ref` to a release tag (e.g. `v0.1.0`). Tags match `pubspec.yaml` `version` 
 
 ### iOS setup
 
-The plugin pulls in `Iterable-iOS-SDK` through CocoaPods automatically. Iterable
-requires dynamic frameworks, so make sure your `ios/Podfile` uses:
+**This plugin is Swift Package Manager only — it ships no podspec.** Flutter
+resolves `iterable-swift-sdk` through SPM automatically; there is nothing to add
+to a `Podfile`.
 
-```ruby
-use_frameworks!
-platform :ios, '13.0'
+Swift Package Manager is on by default from Flutter 3.44. On an older Flutter,
+or in a project where it was turned off, enable it once:
+
+```bash
+flutter config --enable-swift-package-manager
 ```
+
+Your app's Xcode project needs Xcode 15+, and Flutter migrates it to Swift
+Package Manager on the next `flutter build ios` / `flutter run`. If the build
+stops with *"The following plugin(s) are only compatible with Swift Package
+Manager"*, that is this step — run the command above and build again.
+
+If your app still uses CocoaPods for other plugins, that keeps working: the two
+coexist, and Iterable simply arrives through SPM instead.
+
+Set your deployment target to iOS 13 or later.
 
 Push token forwarding and silent-push handling are wired automatically as long
 as your `AppDelegate` extends `FlutterAppDelegate` (the default). If you use a
@@ -210,6 +224,6 @@ The JWT `authHandler` is fully asynchronous on both platforms.
 ```bash
 flutter analyze
 flutter test
-cd example && flutter build ios --simulator   # iOS smoke build
+cd example && flutter build ios --simulator   # iOS smoke build (SPM)
 cd example && flutter build apk --debug        # Android smoke build
 ```

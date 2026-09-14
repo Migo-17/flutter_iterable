@@ -5,7 +5,9 @@ homepage: https://github.com/Migo-17/flutter_iterable
 
 environment:
   sdk: ^3.12.2
-  flutter: '>=3.3.0'
+  # The iOS side ships only a Swift package, whose `FlutterFramework`
+  # dependency the Flutter tool understands from 3.44 onwards.
+  flutter: '>=3.44.0'
 
 dependencies:
   flutter:

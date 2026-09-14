@@ -2,9 +2,16 @@
 
 ### Changed
 
+* **Breaking: dropped CocoaPods support on iOS — the plugin is now Swift Package
+  Manager only.** `ios/iterable_sdk.podspec` is gone; the iOS dependency is
+  resolved through `ios/iterable_sdk/Package.swift`. Apps need Swift Package
+  Manager enabled (default from Flutter 3.44, otherwise
+  `flutter config --enable-swift-package-manager`) and Xcode 15+. Apps that use
+  CocoaPods for other plugins are unaffected — the two coexist.
+* The minimum Flutter version is now 3.44.0, which is where the tool learned the
+  `FlutterFramework` Swift package dependency this plugin declares.
 * Upgraded the native SDKs: `com.iterable:iterableapi` `3.5.13` -> `3.10.1` on
-  Android, `Iterable-iOS-SDK` `~> 6.7` -> `~> 6.7.5` on iOS (Swift Package
-  Manager: `from: "6.7.5"`).
+  Android, and `iterable-swift-sdk` `from: "6.7.0"` -> `from: "6.7.5"` on iOS.
 * Android now reports the plugin to Iterable as the Flutter mobile framework,
   matching iOS.
 * `IterableAPI.initialize` returns `false` instead of `true` when the native SDK
