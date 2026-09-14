@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -86,6 +87,18 @@ void main() {
     });
   });
 
+  test('IterableAPI.version matches the pubspec version', () {
+    // The two are separate declarations by necessity (Dart cannot read the
+    // pubspec at runtime), and Iterable is told this value — so pin them here
+    // rather than let them drift.
+    final String pubspec = File('pubspec.yaml').readAsStringSync();
+    final RegExpMatch? match =
+        RegExp(r'^version:\s*(\S+)$', multiLine: true).firstMatch(pubspec);
+
+    expect(match, isNotNull, reason: 'no version: line in pubspec.yaml');
+    expect(IterableAPI.version, match!.group(1));
+  });
+
   group('onPushOpened', () {
     test('replays a push that arrived before anything was listening', () async {
       await IterableAPI.initialize('api-key', IterableConfig());
@@ -101,6 +114,53 @@ void main() {
         const Duration(seconds: 5),
       );
       expect(payload['itbl'], 'cold-start-payload');
+    });
+
+    test('keeps only the most recent pushes when nothing listens', () async {
+      await IterableAPI.initialize('api-key', IterableConfig());
+
+      // One more than the buffer holds; the oldest is expected to fall off.
+      for (var i = 0; i < 6; i++) {
+        await _emitFromNative('handlePushOpened', <String, dynamic>{
+          'itbl': 'payload-$i',
+        });
+      }
+
+      final List<Map<String, dynamic>> received = <Map<String, dynamic>>[];
+      final StreamSubscription<Map<String, dynamic>> sub =
+          IterableAPI.onPushOpened.listen(received.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        received.map((Map<String, dynamic> e) => e['itbl']),
+        <String>['payload-1', 'payload-2', 'payload-3', 'payload-4',
+            'payload-5'],
+      );
+    });
+
+    test('replays a buffered push once, not to every later subscriber',
+        () async {
+      await IterableAPI.initialize('api-key', IterableConfig());
+
+      await _emitFromNative('handlePushOpened', <String, dynamic>{
+        'itbl': 'once-only',
+      });
+
+      final List<Map<String, dynamic>> first = <Map<String, dynamic>>[];
+      final StreamSubscription<Map<String, dynamic>> firstSub =
+          IterableAPI.onPushOpened.listen(first.add);
+      await Future<void>.delayed(Duration.zero);
+      await firstSub.cancel();
+
+      final List<Map<String, dynamic>> second = <Map<String, dynamic>>[];
+      final StreamSubscription<Map<String, dynamic>> secondSub =
+          IterableAPI.onPushOpened.listen(second.add);
+      addTearDown(secondSub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(first.single['itbl'], 'once-only');
+      expect(second, isEmpty);
     });
 
     test('delivers to an existing listener without buffering', () async {

@@ -278,7 +278,7 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
                 IterableAPI.embeddedManager.addUpdateListener(self)
             }
             self.emitPushOpenedIfAvailable()
-            result(true)
+            result(Self.sdkInitialized)
         }
     }
 

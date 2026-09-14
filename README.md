@@ -227,3 +227,9 @@ flutter test
 cd example && flutter build ios --simulator   # iOS smoke build (SPM)
 cd example && flutter build apk --debug        # Android smoke build
 ```
+
+The example app carries no CocoaPods integration. Its Xcode project gains the
+Swift Package Manager integration the first time `flutter build ios` /
+`flutter run` is executed on macOS — Flutter writes the package reference into
+`example/ios/Runner.xcodeproj/project.pbxproj`. That is a one-off generated
+diff; commit it.
