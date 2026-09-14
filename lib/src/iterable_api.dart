@@ -27,8 +27,18 @@ class IterableAPI {
 
   static IterableConfig? _config;
 
+  /// Push-opened payloads that arrived before anything listened to
+  /// [onPushOpened]. A push that launches the app from a terminated state is
+  /// delivered by the native SDK while Flutter is still starting up, so the
+  /// event would otherwise be dropped by the broadcast controller.
+  static final List<Map<String, dynamic>> _pendingPushOpened =
+      <Map<String, dynamic>>[];
+  static const int _maxPendingPushOpened = 5;
+
   static final StreamController<Map<String, dynamic>> _pushOpenedController =
-      StreamController<Map<String, dynamic>>.broadcast();
+      StreamController<Map<String, dynamic>>.broadcast(
+    onListen: _flushPendingPushOpened,
+  );
   static final StreamController<IterableInAppMessage> _inAppReceivedController =
       StreamController<IterableInAppMessage>.broadcast();
   static final StreamController<void> _inAppInboxChangedController =
@@ -64,18 +74,41 @@ class IterableAPI {
   // Initialization & identity
   // --------------------------------------------------------------------------
 
-  /// Initializes the SDK. Returns `true` on success.
+  /// Version of this plugin. Reported to Iterable as the mobile framework
+  /// version, and kept in sync with `pubspec.yaml`.
+  static const String version = '0.1.0';
+
+  /// Initializes the SDK. Returns `true` once the native Iterable SDK has
+  /// actually been initialized, `false` otherwise (for example when [apiKey]
+  /// is empty).
   static Future<bool> initialize(
     String apiKey,
     IterableConfig config,
   ) async {
+    if (apiKey.isEmpty) {
+      return false;
+    }
     _config = config;
     _channel.setMethodCallHandler(_handleNativeCall);
     final bool? result = await _channel.invokeMethod<bool>('initialize', {
       'apiKey': apiKey,
       'config': config.toMap(),
-      'version': '0.0.1',
+      'version': version,
     });
+    return result ?? false;
+  }
+
+  /// Whether the native Iterable SDK is initialized.
+  ///
+  /// Answered by the native side, so it reports `false` when [initialize]
+  /// failed and stays `true` when the Flutter engine restarted while the
+  /// process — and with it the native SDK — lived on.
+  ///
+  /// Android asks the SDK directly, so it also reports `true` when the host app
+  /// initialized Iterable in native code. iOS exposes no public API for that,
+  /// so there it covers initialization performed through this plugin.
+  static Future<bool> isInitialized() async {
+    final bool? result = await _channel.invokeMethod<bool>('isInitialized');
     return result ?? false;
   }
 
@@ -256,6 +289,21 @@ class IterableAPI {
   // Native -> Flutter dispatch
   // --------------------------------------------------------------------------
 
+  /// Replays push-opened payloads buffered before the first [onPushOpened]
+  /// subscription. Scheduled as a microtask so the subscription that triggered
+  /// this is fully installed before the events are delivered.
+  static void _flushPendingPushOpened() {
+    if (_pendingPushOpened.isEmpty) return;
+    final List<Map<String, dynamic>> pending =
+        List<Map<String, dynamic>>.of(_pendingPushOpened);
+    _pendingPushOpened.clear();
+    scheduleMicrotask(() {
+      for (final Map<String, dynamic> payload in pending) {
+        _pushOpenedController.add(payload);
+      }
+    });
+  }
+
   static Future<dynamic> _handleNativeCall(MethodCall call) async {
     final Map<String, dynamic> args =
         (call.arguments as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
@@ -303,7 +351,14 @@ class IterableAPI {
         return response.value;
 
       case 'handlePushOpened':
-        _pushOpenedController.add(args);
+        if (_pushOpenedController.hasListener) {
+          _pushOpenedController.add(args);
+        } else {
+          if (_pendingPushOpened.length >= _maxPendingPushOpened) {
+            _pendingPushOpened.removeAt(0);
+          }
+          _pendingPushOpened.add(args);
+        }
         return null;
 
       case 'handleInAppReceived':

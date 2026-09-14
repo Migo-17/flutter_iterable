@@ -65,8 +65,14 @@ class _MyAppState extends State<MyApp> {
     _inAppSub = IterableAPI.onInAppReceived.listen((IterableInAppMessage m) {
       _addLog('in-app received: ${m.messageId}');
     });
+    if (!mounted) return;
     setState(() => _initialized = ok);
     _addLog('initialized: $ok');
+
+    // Cross-check against the native SDK, which is the real source of truth.
+    final bool live = await IterableAPI.isInitialized();
+    if (!mounted) return;
+    _addLog('isInitialized: $live');
   }
 
   void _addLog(String message) {

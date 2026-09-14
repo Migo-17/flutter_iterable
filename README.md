@@ -10,7 +10,7 @@ deep-link / custom-action handling and JWT (token-based) authentication.
 
 | Area | Android SDK | iOS SDK |
 |------|-------------|---------|
-| Native dependency | `com.iterable:iterableapi:3.5.13` | `Iterable-iOS-SDK ~> 6.6` |
+| Native dependency | `com.iterable:iterableapi:3.10.1` | `Iterable-iOS-SDK ~> 6.7.5` |
 | Min platform | `minSdk 24` | iOS 13 |
 
 ## Features
@@ -32,10 +32,10 @@ dependencies:
   iterable_sdk:
     git:
       url: https://github.com/Migo-17/flutter_iterable.git
-      ref: v0.0.1
+      ref: v0.1.0
 ```
 
-Pin `ref` to a release tag (e.g. `v0.0.1`). Tags match `pubspec.yaml` `version` with a `v` prefix.
+Pin `ref` to a release tag (e.g. `v0.1.0`). Tags match `pubspec.yaml` `version` with a `v` prefix.
 
 ### iOS setup
 
@@ -98,7 +98,11 @@ final config = IterableConfig(
   },
 );
 
+// Returns false if the native SDK did not come up (e.g. an empty API key).
 await IterableAPI.initialize('YOUR_MOBILE_API_KEY', config);
+
+// Ask the native SDK whether it is initialized, at any point later on.
+await IterableAPI.isInitialized();
 
 // Identity
 await IterableAPI.setEmail('user@example.com');
@@ -175,6 +179,12 @@ future use and is currently not round-tripped to the native SDK.
 
 `IterableAPI.onPushOpened` also emits the push payload when an action is processed.
 
+When a push tap launches the app from a terminated state, the native SDK reports the
+open before app code has had a chance to subscribe. `onPushOpened` buffers those
+payloads and replays them to the first subscriber, so listening during startup is
+enough — there is no need to race the native callback. `IterableAPI.getLastPushPayload()`
+returns the same payload on demand.
+
 ## Architecture
 
 The plugin uses a single bidirectional `MethodChannel` (`iterable_sdk/method`):
@@ -194,7 +204,6 @@ The JWT `authHandler` is fully asynchronous on both platforms.
 - `setAttributionInfo` is a no-op on Android (not part of the public Android API).
 - Individual embedded impression/session tracking is handled automatically by the
   native session managers.
-- CocoaPods publishes Iterable up to `6.6.x`; Swift Package Manager can use `6.7.x`.
 
 ## Development
 

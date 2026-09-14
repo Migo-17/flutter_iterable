@@ -1,6 +1,6 @@
 name: iterable_sdk
 description: "Flutter plugin wrapping Iterable's native Android and iOS SDKs (identity, events, commerce, push, in-app, embedded messages, JWT auth)."
-version: 0.0.1
+version: 0.1.0
 homepage: https://github.com/Migo-17/flutter_iterable
 
 environment:

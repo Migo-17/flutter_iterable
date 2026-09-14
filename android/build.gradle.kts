@@ -72,7 +72,7 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.iterable:iterableapi:3.5.13")
+    implementation("com.iterable:iterableapi:3.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.18.0")

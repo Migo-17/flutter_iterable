@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'iterable_sdk'
-  s.version          = '0.0.1'
+  s.version          = '0.1.0'
   s.summary          = 'Flutter plugin wrapping the Iterable iOS SDK.'
   s.description      = <<-DESC
 Flutter plugin wrapping Iterable's native Android and iOS SDKs (identity,
@@ -16,7 +16,7 @@ events, commerce, push, in-app, embedded messages, and JWT auth).
   s.source           = { :path => '.' }
   s.source_files = 'iterable_sdk/Sources/iterable_sdk/**/*'
   s.dependency 'Flutter'
-  s.dependency 'Iterable-iOS-SDK', '~> 6.7'
+  s.dependency 'Iterable-iOS-SDK', '~> 6.7.5'
   s.platform = :ios, '13.0'
 
   # Flutter.framework does not contain a i386 slice.
