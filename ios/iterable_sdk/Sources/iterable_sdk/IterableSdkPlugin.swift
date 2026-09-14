@@ -7,9 +7,17 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     private static let channelName = "iterable_sdk/method"
     private static var shared: IterableSdkPlugin?
 
+    /// Whether `IterableAPI.initialize` has run in this process. Static because the
+    /// native SDK is a process-wide singleton: a new Flutter engine (or a hot
+    /// restart) creates a new plugin instance while the SDK stays initialized.
+    ///
+    /// The iOS SDK exposes no public way to ask whether it is initialized (the
+    /// in-app / embedded managers assert instead of reporting it), so this tracks
+    /// initialization performed through the plugin.
+    private static var sdkInitialized = false
+
     private var channel: FlutterMethodChannel
     private var autoDisplayPaused = false
-    private var sdkInitialized = false
     private var hasUrlHandler = false
     private var hasCustomActionHandler = false
 
@@ -31,9 +39,20 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let args = call.arguments as? [String: Any] ?? [:]
 
+        // `IterableAPI.inAppManager` and `IterableAPI.embeddedManager` raise an
+        // `assertionFailure` (a crash in debug builds) when the SDK has not been
+        // initialized, so answer message calls with an empty result until it is.
+        if !Self.sdkInitialized, Self.needsInitializedSdk(call.method) {
+            result(Self.emptyResult(for: call.method))
+            return
+        }
+
         switch call.method {
         case "initialize":
             initialize(args: args, result: result)
+
+        case "isInitialized":
+            result(Self.sdkInitialized)
 
         case "setEmail":
             IterableAPI.setEmail(args["email"] as? String, args["authToken"] as? String)
@@ -132,8 +151,12 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
             result(IterableAPI.lastPushPayload as? [String: Any])
 
         case "setAutoDisplayPaused":
+            // Recorded even before initialization (it gates `onNew(message:)`);
+            // the manager itself is only safe to touch once the SDK is up.
             autoDisplayPaused = args["paused"] as? Bool ?? false
-            IterableAPI.inAppManager.isAutoDisplayPaused = autoDisplayPaused
+            if Self.sdkInitialized {
+                IterableAPI.inAppManager.isAutoDisplayPaused = autoDisplayPaused
+            }
             result(nil)
 
         // In-app
@@ -237,24 +260,46 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     // MARK: - Initialization
 
     private func initialize(args: [String: Any], result: @escaping FlutterResult) {
-        let apiKey = args["apiKey"] as? String ?? ""
+        guard let apiKey = args["apiKey"] as? String, !apiKey.isEmpty else {
+            // Without an API key the native SDK would come up unusable, so refuse
+            // rather than report an initialization that did not happen.
+            result(false)
+            return
+        }
         let configMap = args["config"] as? [String: Any] ?? [:]
         hasUrlHandler = configMap["hasUrlHandler"] as? Bool ?? false
         hasCustomActionHandler = configMap["hasCustomActionHandler"] as? Bool ?? false
-        let config = buildConfig(configMap)
+        let config = buildConfig(configMap, pluginVersion: args["version"] as? String)
 
         DispatchQueue.main.async {
             IterableAPI.initialize(apiKey: apiKey, launchOptions: nil, config: config)
-            self.sdkInitialized = true
+            Self.sdkInitialized = true
             if configMap["enableEmbeddedMessaging"] as? Bool == true {
                 IterableAPI.embeddedManager.addUpdateListener(self)
             }
             self.emitPushOpenedIfAvailable()
-            result(true)
+            result(Self.sdkInitialized)
         }
     }
 
-    private func buildConfig(_ map: [String: Any]) -> IterableConfig {
+    /// Method calls that reach into the in-app / embedded managers, which the
+    /// native SDK refuses to hand out before initialization.
+    private static func needsInitializedSdk(_ method: String) -> Bool {
+        return method.hasPrefix("inApp.") || method.hasPrefix("embedded.")
+    }
+
+    private static func emptyResult(for method: String) -> Any? {
+        switch method {
+        case "inApp.getMessages", "inApp.getInboxMessages", "embedded.getMessages":
+            return [Any]()
+        case "inApp.getUnreadInboxMessagesCount":
+            return 0
+        default:
+            return nil
+        }
+    }
+
+    private func buildConfig(_ map: [String: Any], pluginVersion: String?) -> IterableConfig {
         let config = IterableConfig()
         config.pushIntegrationName = map["pushIntegrationName"] as? String
         config.autoPushRegistration = map["autoPushRegistration"] as? Bool ?? true
@@ -266,7 +311,7 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
         config.enableEmbeddedMessaging = map["enableEmbeddedMessaging"] as? Bool ?? false
         config.mobileFrameworkInfo = IterableAPIMobileFrameworkInfo(
             frameworkType: .flutter,
-            iterableSdkVersion: map["version"] as? String)
+            iterableSdkVersion: pluginVersion)
 
         let maxRetry = map["authRetryMaxRetries"] as? Int ?? 1
         let retryInterval = map["authRetryIntervalSeconds"] as? Double ?? 3.0
@@ -349,19 +394,33 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     public func application(_ application: UIApplication,
                             didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                             fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) -> Bool {
+        // Never hand the system's completion handler to Iterable (see the note on
+        // `userNotificationCenter` below): it is dropped when the SDK is not
+        // initialized yet. Forward without it and always complete here.
         IterableAppIntegration.application(application,
                                           didReceiveRemoteNotification: userInfo,
-                                          fetchCompletionHandler: completionHandler)
+                                          fetchCompletionHandler: nil)
+        completionHandler(.noData)
         return true
     }
 
     /// Forwards notification taps to Iterable so openUrl / customAction handlers run.
+    ///
+    /// The completion handler is deliberately *not* passed to Iterable. Until
+    /// `IterableAPI.initialize` has run, `IterableAppIntegration` only stashes the
+    /// response for replay and never calls the handler — and that is precisely the
+    /// state the app is in when a notification tap launches it from a terminated
+    /// state, because Dart's `initialize()` cannot run before the Flutter engine is
+    /// up. iOS terminates the app when a notification completion handler is never
+    /// called, which is the cold-start crash this guards against. Iterable still
+    /// replays the stashed tap once the SDK is initialized.
     public func userNotificationCenter(_ center: UNUserNotificationCenter,
                                        didReceive response: UNNotificationResponse,
                                        withCompletionHandler completionHandler: @escaping () -> Void) {
         IterableAppIntegration.userNotificationCenter(center,
                                                       didReceive: response,
-                                                      withCompletionHandler: completionHandler)
+                                                      withCompletionHandler: nil)
+        completionHandler()
         emitPushOpenedIfAvailable()
     }
 
@@ -498,7 +557,8 @@ public class IterableSdkPlugin: NSObject, FlutterPlugin {
     }
 
     private func emitPushOpenedIfAvailable() {
-        guard let payload = IterableAPI.lastPushPayload as? [String: Any] else { return }
+        guard Self.sdkInitialized,
+              let payload = IterableAPI.lastPushPayload as? [String: Any] else { return }
         invokeFlutter("handlePushOpened", payload)
     }
 }

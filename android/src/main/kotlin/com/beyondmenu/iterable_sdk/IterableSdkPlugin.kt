@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.iterable.iterableapi.IterableAPIMobileFrameworkInfo
+import com.iterable.iterableapi.IterableAPIMobileFrameworkType
 import com.iterable.iterableapi.IterableAction
 import com.iterable.iterableapi.IterableActionContext
 import com.iterable.iterableapi.IterableApi
@@ -57,8 +59,14 @@ class IterableSdkPlugin :
     @Volatile
     private var autoDisplayPaused = false
 
+    /**
+     * Whether *this* plugin instance has run [initialize], i.e. whether the handlers in
+     * the SDK's config belong to the engine currently attached. Distinct from
+     * [isSdkInitialized]: the SDK is a process-wide singleton, so after an engine
+     * restart it is still initialized while this instance's handlers are not yet wired.
+     */
     @Volatile
-    private var sdkInitialized = false
+    private var handlersRegistered = false
 
     @Volatile
     private var hasUrlHandler = false
@@ -110,8 +118,27 @@ class IterableSdkPlugin :
         return false
     }
 
+    /**
+     * True only once the native SDK has actually completed [IterableApi.initialize]:
+     * the in-app manager is created there and stays null until it runs. Asking the SDK
+     * instead of keeping a plugin-local flag keeps the answer correct when the Flutter
+     * engine restarts while the process (and the SDK) lives on, and when the host app
+     * initializes Iterable natively.
+     *
+     * This answers the `isInitialized` channel call only. Do not gate push handling on
+     * it — see [handlersRegistered].
+     */
+    private fun isSdkInitialized(): Boolean =
+        IterableApi.getInstance().getInAppManagerOrNull() != null
+
     private fun handleActivityIntent(intent: Intent?) {
-        if (!sdkInitialized || intent == null) return
+        // Deliberately gated on this instance, not on [isSdkInitialized]. Acting on a
+        // push runs the SDK's stored url/customAction handlers, which after an engine
+        // restart still belong to the previous plugin instance and its dead channel:
+        // the action would be swallowed (the handler claims it), the Dart side would
+        // never hear it, and handledPushKeys would mark the push done so the replay at
+        // the end of initialize() skips it. Wait for this engine to register instead.
+        if (!handlersRegistered || intent == null) return
         if (!IterableApi.getInstance().isIterableIntent(intent)) return
         // Act on each push once. Blocks the "open app" relaunch loop and avoids
         // re-handling the same intent on activity re-attach (e.g. rotation).
@@ -143,6 +170,7 @@ class IterableSdkPlugin :
         try {
             when (call.method) {
                 "initialize" -> initialize(call, result)
+                "isInitialized" -> result.success(isSdkInitialized())
                 "setEmail" -> {
                     IterableApi.getInstance().setEmail(
                         call.argument("email"),
@@ -216,6 +244,7 @@ class IterableSdkPlugin :
                             call.argument<Number>("campaignId")?.toInt() ?: 0,
                             call.argument<Number>("templateId")?.toInt() ?: 0,
                             messageId,
+                            call.argument<Boolean>("appAlreadyRunning") ?: false,
                             IterableSerialization.mapToJson(call.argument("dataFields"))
                         )
                     }
@@ -252,6 +281,8 @@ class IterableSdkPlugin :
                 "getLastPushPayload" -> result.success(bundleToMap(IterableApi.getInstance().payloadData))
                 "setAutoDisplayPaused" -> {
                     autoDisplayPaused = call.argument<Boolean>("paused") ?: false
+                    IterableApi.getInstance().inAppManager
+                        .setAutoDisplayPaused(autoDisplayPaused)
                     result.success(null)
                 }
                 // In-app
@@ -365,13 +396,20 @@ class IterableSdkPlugin :
     }
 
     private fun initialize(call: MethodCall, result: Result) {
-        val apiKey = call.argument<String>("apiKey")!!
+        val apiKey = call.argument<String>("apiKey")
+        if (apiKey.isNullOrEmpty()) {
+            // Without an API key the native SDK would come up unusable, so refuse
+            // rather than report an initialization that did not happen.
+            Log.e(TAG, "initialize called without an API key")
+            result.success(false)
+            return
+        }
         val configMap = call.argument<Map<String, Any?>>("config") ?: emptyMap()
         hasUrlHandler = configMap["hasUrlHandler"] as? Boolean == true
         hasCustomActionHandler = configMap["hasCustomActionHandler"] as? Boolean == true
-        val config = buildConfig(configMap)
+        val config = buildConfig(configMap, call.argument<String>("version"))
         IterableApi.initialize(applicationContext, apiKey, config)
-        sdkInitialized = true
+        handlersRegistered = true
 
         if (configMap["enableEmbeddedMessaging"] as? Boolean == true) {
             IterableApi.getInstance().embeddedManager.addUpdateListener(
@@ -390,10 +428,10 @@ class IterableSdkPlugin :
         handleActivityIntent(activity?.intent)
         emitPushOpenedIfAvailable()
 
-        result.success(true)
+        result.success(isSdkInitialized())
     }
 
-    private fun buildConfig(map: Map<String, Any?>): IterableConfig {
+    private fun buildConfig(map: Map<String, Any?>, pluginVersion: String?): IterableConfig {
         val builder = IterableConfig.Builder()
         (map["pushIntegrationName"] as? String)?.let { builder.setPushIntegrationName(it) }
         builder.setAutoPushRegistration(map["autoPushRegistration"] as? Boolean ?: true)
@@ -420,6 +458,12 @@ class IterableSdkPlugin :
         if (map["enableEmbeddedMessaging"] as? Boolean == true) {
             builder.setEnableEmbeddedMessaging(true)
         }
+        builder.setMobileFrameworkInfo(
+            IterableAPIMobileFrameworkInfo(
+                IterableAPIMobileFrameworkType.FLUTTER,
+                pluginVersion
+            )
+        )
 
         val maxRetry = (map["authRetryMaxRetries"] as? Number)?.toInt() ?: 1
         val retryInterval = (map["authRetryIntervalSeconds"] as? Number)?.toLong() ?: 3L
@@ -621,6 +665,7 @@ class IterableSdkPlugin :
             "source" to when (context?.source) {
                 com.iterable.iterableapi.IterableActionSource.APP_LINK -> 1
                 com.iterable.iterableapi.IterableActionSource.IN_APP -> 2
+                com.iterable.iterableapi.IterableActionSource.EMBEDDED -> 3
                 else -> 0
             }
         )

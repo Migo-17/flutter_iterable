@@ -1,11 +1,13 @@
 name: iterable_sdk
 description: "Flutter plugin wrapping Iterable's native Android and iOS SDKs (identity, events, commerce, push, in-app, embedded messages, JWT auth)."
-version: 0.0.1
+version: 0.1.0
 homepage: https://github.com/Migo-17/flutter_iterable
 
 environment:
   sdk: ^3.12.2
-  flutter: '>=3.3.0'
+  # The iOS side ships only a Swift package, whose `FlutterFramework`
+  # dependency the Flutter tool understands from 3.44 onwards.
+  flutter: '>=3.44.0'
 
 dependencies:
   flutter:
