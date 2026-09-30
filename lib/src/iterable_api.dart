@@ -76,7 +76,7 @@ class IterableAPI {
 
   /// Version of this plugin. Reported to Iterable as the mobile framework
   /// version, and kept in sync with `pubspec.yaml`.
-  static const String version = '0.1.0';
+  static const String version = '0.1.1';
 
   /// Initializes the SDK. Returns `true` once the native Iterable SDK has
   /// actually been initialized, `false` otherwise (for example when [apiKey]

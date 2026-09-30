@@ -533,6 +533,7 @@ class IterableSdkPlugin :
         )
         if (context?.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
             emitPushOpenedIfAvailable()
+            bringAppToForeground()
         }
         true
     }
@@ -549,8 +550,20 @@ class IterableSdkPlugin :
         )
         if (context?.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
             emitPushOpenedIfAvailable()
+            bringAppToForeground()
         }
         true
+    }
+
+    private fun bringAppToForeground() {
+        val launchIntent = applicationContext.packageManager
+            .getLaunchIntentForPackage(applicationContext.packageName) ?: return
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        try {
+            applicationContext.startActivity(launchIntent)
+        } catch (e: Exception) {
+            Log.w(TAG, "bringAppToForeground failed", e)
+        }
     }
 
     private val inAppHandler = IterableInAppHandler { message ->

@@ -1,3 +1,13 @@
+## 0.1.1
+
+### Fixed
+
+* Android: tapping a push with a deep link or custom action while the app is in
+  the background now brings the app to the foreground. The plugin's url and
+  custom action handlers claim the action so the SDK does not open it a second
+  time, and the SDK only launches the app for actions nobody claimed, so the
+  action reached Dart while the app stayed hidden.
+
 ## 0.1.0
 
 ### Changed
