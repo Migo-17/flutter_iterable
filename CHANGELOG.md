@@ -1,3 +1,11 @@
+## 0.1.1
+
+### Fixed
+
+* Android: tapping a push with an open-URL or custom action while the app was
+  in the background ran the handler but left the app in the background. The
+  plugin now brings the app to the foreground for push-originated actions.
+
 ## 0.1.0
 
 ### Changed
