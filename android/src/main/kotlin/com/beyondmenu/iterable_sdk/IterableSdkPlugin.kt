@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import com.iterable.iterableapi.IterableAPIMobileFrameworkInfo
 import com.iterable.iterableapi.IterableAPIMobileFrameworkType
 import com.iterable.iterableapi.IterableAction
@@ -15,6 +17,7 @@ import com.iterable.iterableapi.IterableActionContext
 import com.iterable.iterableapi.IterableApi
 import com.iterable.iterableapi.IterableAuthHandler
 import com.iterable.iterableapi.IterableConfig
+import com.iterable.iterableapi.IterableConstants
 import com.iterable.iterableapi.IterableCustomActionHandler
 import com.iterable.iterableapi.IterableDataRegion
 import com.iterable.iterableapi.IterableHelper
@@ -52,7 +55,7 @@ class IterableSdkPlugin :
 
     // Push payloads already acted on. Iterable's default "open app" action relaunches
     // MainActivity with the same push extras, which re-enters onNewIntent -> a relaunch
-    // loop. Keyed on payload content (see pushIntentKey) so the key survives the
+    // loop. Keyed on the "itbl" payload string so the key survives the
     // extras-copy Iterable makes for the relaunch; each push is handled exactly once.
     private val handledPushKeys = HashSet<String>()
 
@@ -142,22 +145,11 @@ class IterableSdkPlugin :
         if (!IterableApi.getInstance().isIterableIntent(intent)) return
         // Act on each push once. Blocks the "open app" relaunch loop and avoids
         // re-handling the same intent on activity re-attach (e.g. rotation).
-        if (!handledPushKeys.add(pushIntentKey(intent))) return
+        val pushKey = intent.extras?.getString(IterableConstants.ITERABLE_DATA_KEY) ?: return
+        if (!handledPushKeys.add(pushKey)) return
         val context = activity ?: applicationContext
         IterablePushBridge.handleIntent(context, intent)
         emitPushOpenedIfAvailable()
-    }
-
-    /**
-     * Stable identity of a push tap. Prefers Iterable's payload string ("itbl"),
-     * which uniquely identifies the message and is copied verbatim into the relaunch
-     * intent's extras; falls back to a signature over all extras so the guard never
-     * silently no-ops when the payload isn't a plain string.
-     */
-    private fun pushIntentKey(intent: Intent): String {
-        val extras = intent.extras ?: return intent.dataString ?: intent.toString()
-        extras.getString("itbl")?.let { return it }
-        return extras.keySet().sorted().joinToString("|") { "$it=${extras.get(it)}" }
     }
 
     private fun emitPushOpenedIfAvailable() {
@@ -531,8 +523,9 @@ class IterableSdkPlugin :
                 "context" to actionContextToMap(context)
             )
         )
-        if (context?.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
+        if (context.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
             emitPushOpenedIfAvailable()
+            if (!isAppInForeground()) bringAppToForeground()
         }
         true
     }
@@ -547,8 +540,9 @@ class IterableSdkPlugin :
                 "context" to actionContextToMap(context)
             )
         )
-        if (context?.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
+        if (context.source == com.iterable.iterableapi.IterableActionSource.PUSH) {
             emitPushOpenedIfAvailable()
+            if (!isAppInForeground()) bringAppToForeground()
         }
         true
     }
@@ -612,6 +606,24 @@ class IterableSdkPlugin :
     }
 
     // ----- Helpers -----
+
+    private fun isAppInForeground(): Boolean {
+        val lifecycleOwner = activity as? LifecycleOwner ?: return false
+        return lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+    }
+
+    private fun bringAppToForeground() {
+        try {
+            val intent = activity?.let { Intent(applicationContext, it.javaClass) }
+                ?: applicationContext.packageManager
+                    .getLaunchIntentForPackage(applicationContext.packageName)
+                ?: return
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            applicationContext.startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "bringAppToForeground failed", e)
+        }
+    }
 
     private fun emitEmbeddedUpdate() {
         try {
