@@ -1,3 +1,10 @@
+## 0.1.2
+
+### Changed
+
+* Installation instructions now use the pub.dev dependency (`iterable_sdk: ^0.1.2`)
+  instead of a git dependency.
+
 ## 0.1.1
 
 ### Fixed
