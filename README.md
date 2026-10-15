@@ -30,13 +30,8 @@ Add the dependency to your app's `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  iterable_sdk:
-    git:
-      url: https://github.com/Migo-17/flutter_iterable.git
-      ref: v0.1.1
+  iterable_sdk: ^0.1.2
 ```
-
-Pin `ref` to a release tag (e.g. `v0.1.1`). Tags match `pubspec.yaml` `version` with a `v` prefix.
 
 ### iOS setup
 
